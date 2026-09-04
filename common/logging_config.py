@@ -6,15 +6,12 @@ from pythonjsonlogger import jsonlogger
 
 from common.config import get_settings
 
-_CONFIGURED = False
-
 
 def setup_logging(logger_name: str = "wrc") -> logging.Logger:
-    global _CONFIGURED
     settings = get_settings()
     logger = logging.getLogger(logger_name)
 
-    if _CONFIGURED:
+    if logger.handlers:
         return logger
 
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
@@ -37,5 +34,4 @@ def setup_logging(logger_name: str = "wrc") -> logging.Logger:
     logger.addHandler(file_handler)
 
     logger.propagate = False
-    _CONFIGURED = True
     return logger
