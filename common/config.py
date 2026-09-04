@@ -1,10 +1,13 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
     # Mongo
     mongo_root_user: str = "admin"
@@ -40,6 +43,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     log_dir: str = "./logs"
+
+    # Orchestration
+    orchestration_start_date: str = "2015-01-01"
 
     @property
     def bodies(self) -> list[str]:
