@@ -24,6 +24,17 @@ MONTH_NAMES = [
 
 PAGE_NUMBER_RE = re.compile(r"pageNumber=(\d+)")
 
+# The site appends a per-request server-timing comment to every page (e.g.
+# "<!-- Elapsed time: 0.0156007 -->") that differs on every fetch even when
+# the actual decision content hasn't changed. Left in, it would defeat the
+# hash-based idempotency check on every single run. Strip it before hashing
+# and storage — it's server debug noise, not part of the actual document.
+_VOLATILE_MARKER_RE = re.compile(rb"<!--\s*Elapsed time:.*?-->")
+
+
+def _strip_volatile_markers(raw: bytes) -> bytes:
+    return _VOLATILE_MARKER_RE.sub(b"", raw)
+
 
 class WrcSpider(scrapy.Spider):
     """Scrapes WRC/Labour Court/Equality Tribunal/EAT case decisions for one
@@ -192,7 +203,7 @@ class WrcSpider(scrapy.Spider):
         item["partition_date"] = meta["partition_date"]
         item["doc_url"] = response.url
         item["scraped_at"] = datetime.now(UTC).isoformat()
-        item["raw_content"] = response.body
+        item["raw_content"] = _strip_volatile_markers(response.body)
         item["content_type"] = content_type
         return item
 
