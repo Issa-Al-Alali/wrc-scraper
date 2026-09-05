@@ -24,12 +24,17 @@ MONTH_NAMES = [
 
 PAGE_NUMBER_RE = re.compile(r"pageNumber=(\d+)")
 
-# The site appends a per-request server-timing comment to every page (e.g.
-# "<!-- Elapsed time: 0.0156007 -->") that differs on every fetch even when
-# the actual decision content hasn't changed. Left in, it would defeat the
-# hash-based idempotency check on every single run. Strip it before hashing
-# and storage — it's server debug noise, not part of the actual document.
-_VOLATILE_MARKER_RE = re.compile(rb"<!--\s*Elapsed time:.*?-->")
+# The site appends one or two debug HTML comments to every page: a
+# per-request timing value ("<!-- Elapsed time: 0.0156007 -->") that differs
+# on every fetch, and a cache-status comment ("<!-- cached or not being
+# index.aspx page -->") that isn't just variable text -- it's present or
+# absent entirely depending on whether that particular request was served
+# from the server's output cache. Either one left in would defeat the
+# hash-based idempotency check. Strip both before hashing and storage --
+# they're server debug noise, not part of the actual document.
+_VOLATILE_MARKER_RE = re.compile(
+    rb"<!--\s*(?:Elapsed time:.*?|cached or not being index\.aspx page)\s*-->"
+)
 
 
 def _strip_volatile_markers(raw: bytes) -> bytes:

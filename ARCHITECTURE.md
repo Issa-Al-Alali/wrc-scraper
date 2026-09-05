@@ -87,17 +87,25 @@ neither inline content nor a PDF link is found, the record is logged
 (`empty_content_no_pdf_fallback`) and skipped rather than storing an empty
 file.
 
-## A dynamic per-request marker breaks hashing unless stripped
+## Two dynamic per-request markers break hashing unless stripped
 
 Every page on the site ends with a server-timing HTML comment
 (`<!-- Elapsed time: 0.0156007 -->`) that has a different value on every
 single fetch, confirmed by requesting the same URL twice in a row and
-diffing the bytes. Hashing the raw response as-is would make idempotency
-never trigger — every run would look like changed content, and the pipeline
-would re-upload a new version of every record on every re-scrape. The spider
-strips this one specific comment (`_strip_volatile_markers` in
-`wrc_spider.py`) before it becomes `raw_content`, so both the stored bytes
-and the hash are stable across runs. No other volatile markers (no
+diffing the bytes. A second comment (`<!-- cached or not being index.aspx
+page -->`) is worse than just variable text — it's present or absent
+*entirely* depending on whether that particular request happened to be
+served from the server's output cache, which only showed up as a real bug
+once a full ~200-record crawl was compared against itself (small test
+crawls of the same pages happened not to hit a cache miss). Hashing the raw
+response as-is would make idempotency never trigger — every run would look
+like changed content, and the pipeline would version/re-upload every record
+on every re-scrape (this is exactly what happened before both markers were
+handled: two consecutive full runs each reported 211/211 as "changed").
+`_strip_volatile_markers` in `wrc_spider.py` removes both comments —
+matching on either being present or absent — before the bytes become
+`raw_content`, so both the stored file and its hash are stable across runs
+regardless of server-side cache state. No other volatile markers (no
 `__VIEWSTATE`, no CSRF token, no session id) were found on these pages.
 
 ## Idempotency
