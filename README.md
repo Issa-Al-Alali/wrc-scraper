@@ -47,8 +47,10 @@ dagster dev -f orchestration/definitions.py
 
 Open the Dagster UI (default http://localhost:3000), materialize
 `scrape_partition_body` partitions for the month/body combinations you want,
-then materialize the corresponding `transform_range` partition. Or launch the
-`wrc_pipeline` job directly for a full backfill.
+then materialize the corresponding `transform_range` partition (it depends
+on all four bodies for that month, so the UI will show it as unmaterializable
+until they're all done). Use "Materialize all" with a partition range
+selected to backfill many months/bodies at once.
 
 ## Tests
 

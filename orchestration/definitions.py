@@ -81,12 +81,6 @@ def transform_range(context: dg.AssetExecutionContext) -> None:
     run_transform(start, end)
 
 
-wrc_pipeline_job = dg.define_asset_job(
-    name="wrc_pipeline",
-    selection=[scrape_partition_body, transform_range],
-)
-
 defs = dg.Definitions(
     assets=[scrape_partition_body, transform_range],
-    jobs=[wrc_pipeline_job],
 )
