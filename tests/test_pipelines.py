@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import patch
 
 import wrc_scraper.pipelines as pipelines_module
@@ -5,13 +6,16 @@ from wrc_scraper.items import CaseItem
 
 
 class FakeCollection:
+    """Mimics the subset of PyMongo's async collection API the pipeline
+    uses; methods are coroutines since the real ones are too."""
+
     def __init__(self):
         self.docs = {}
 
-    def find_one(self, query):
+    async def find_one(self, query):
         return self.docs.get(query["_id"])
 
-    def update_one(self, query, update, upsert=False):
+    async def update_one(self, query, update, upsert=False):
         doc_id = query["_id"]
         doc = self.docs.get(doc_id)
         if doc is None:
@@ -24,7 +28,7 @@ class FakeCollection:
         for k, v in update.get("$push", {}).items():
             doc.setdefault(k, []).append(v)
 
-    def replace_one(self, query, doc, upsert=False):
+    async def replace_one(self, query, doc, upsert=False):
         self.docs[query["_id"]] = doc
 
 
@@ -42,7 +46,7 @@ def make_item(identifier="ADJ-1", content=b"hello"):
 
 
 def _make_pipeline(fake_collection):
-    with patch("wrc_scraper.pipelines.get_db") as mock_get_db, patch(
+    with patch("wrc_scraper.pipelines.get_async_db") as mock_get_db, patch(
         "wrc_scraper.pipelines.ensure_bucket"
     ):
         settings = pipelines_module.get_settings()
@@ -57,8 +61,8 @@ def test_second_identical_scrape_is_skipped_not_reuploaded():
     pipeline = _make_pipeline(fake_collection)
 
     with patch("wrc_scraper.pipelines.upload_bytes") as mock_upload:
-        pipeline.process_item(make_item(content=b"same bytes"), spider=None)
-        pipeline.process_item(make_item(content=b"same bytes"), spider=None)
+        asyncio.run(pipeline.process_item(make_item(content=b"same bytes"), spider=None))
+        asyncio.run(pipeline.process_item(make_item(content=b"same bytes"), spider=None))
 
     assert mock_upload.call_count == 1
     assert pipeline.stats == {"found": 2, "scraped": 1, "failed": 0, "skipped": 1}
@@ -70,8 +74,8 @@ def test_changed_content_creates_new_version_without_overwriting():
     pipeline = _make_pipeline(fake_collection)
 
     with patch("wrc_scraper.pipelines.upload_bytes") as mock_upload:
-        pipeline.process_item(make_item(content=b"v1"), spider=None)
-        pipeline.process_item(make_item(content=b"v2 different"), spider=None)
+        asyncio.run(pipeline.process_item(make_item(content=b"v1"), spider=None))
+        asyncio.run(pipeline.process_item(make_item(content=b"v2 different"), spider=None))
 
     assert mock_upload.call_count == 2
     assert pipeline.stats["scraped"] == 2
@@ -84,7 +88,7 @@ def test_upsert_by_identifier_keeps_single_record():
     pipeline = _make_pipeline(fake_collection)
 
     with patch("wrc_scraper.pipelines.upload_bytes"):
-        pipeline.process_item(make_item(content=b"v1"), spider=None)
-        pipeline.process_item(make_item(content=b"v2 different"), spider=None)
+        asyncio.run(pipeline.process_item(make_item(content=b"v1"), spider=None))
+        asyncio.run(pipeline.process_item(make_item(content=b"v2 different"), spider=None))
 
     assert len(fake_collection.docs) == 1

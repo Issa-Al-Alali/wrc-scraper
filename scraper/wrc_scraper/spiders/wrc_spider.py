@@ -6,7 +6,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import scrapy  # noqa: E402
-from bs4 import BeautifulSoup  # noqa: E402
 
 from common.config import get_settings  # noqa: E402
 from common.date_extraction import extract_published_date  # noqa: E402
@@ -155,15 +154,14 @@ class WrcSpider(scrapy.Spider):
     def parse_detail(self, response):
         meta = response.meta
         content_type = response.headers.get("Content-Type", b"").decode(errors="ignore")
-        soup = BeautifulSoup(response.body, "lxml")
-        content_div = soup.select_one("div.content")
-        text = content_div.get_text(" ", strip=True) if content_div else ""
+        content = response.css("div.content")
+        text = " ".join(t.strip() for t in content.css("::text").getall() if t.strip())
 
         if not text:
-            pdf_link = soup.select_one('a[href$=".pdf"]')
-            if pdf_link and pdf_link.get("href"):
+            pdf_href = response.css('a[href$=".pdf"]::attr(href)').get()
+            if pdf_href:
                 yield scrapy.Request(
-                    response.urljoin(pdf_link["href"]),
+                    response.urljoin(pdf_href),
                     callback=self.parse_pdf_fallback,
                     errback=self.handle_detail_error,
                     meta=meta,

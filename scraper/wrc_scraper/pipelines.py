@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from common.config import get_settings  # noqa: E402
 from common.hashing import sha256_of_bytes  # noqa: E402
 from common.logging_config import setup_logging  # noqa: E402
-from common.mongo_client import get_db  # noqa: E402
+from common.mongo_client import get_async_client, get_async_db  # noqa: E402
 from common.storage_client import ensure_bucket, upload_bytes  # noqa: E402
 
 logger = setup_logging("wrc_scraper.pipeline")
@@ -31,10 +31,10 @@ class MongoMinioPipeline:
 
     def open_spider(self, spider):
         ensure_bucket(self.settings.minio_raw_bucket)
-        self.collection = get_db(transformed=False)[self.settings.mongo_raw_collection]
+        self.collection = get_async_db(transformed=False)[self.settings.mongo_raw_collection]
         self.started_at = datetime.now(UTC)
 
-    def close_spider(self, spider):
+    async def close_spider(self, spider):
         duration_seconds = (datetime.now(UTC) - self.started_at).total_seconds()
         logger.info(
             "run_summary",
@@ -45,8 +45,9 @@ class MongoMinioPipeline:
                 **self.stats,
             },
         )
+        await get_async_client().close()
 
-    def process_item(self, item, spider):
+    async def process_item(self, item, spider):
         self.stats["found"] += 1
         raw_content: bytes = item["raw_content"]
         content_type: str = item.get("content_type") or "text/html"
@@ -55,11 +56,11 @@ class MongoMinioPipeline:
         try:
             file_hash = f"sha256:{sha256_of_bytes(raw_content)}"
             ext = _extension_for(content_type)
-            existing = self.collection.find_one({"_id": identifier})
+            existing = await self.collection.find_one({"_id": identifier})
             now = datetime.now(UTC).isoformat()
 
             if existing and existing.get("file_hash") == file_hash:
-                self.collection.update_one(
+                await self.collection.update_one(
                     {"_id": identifier}, {"$set": {"last_seen_at": now}}
                 )
                 self.stats["skipped"] += 1
@@ -72,6 +73,8 @@ class MongoMinioPipeline:
                 version = 1
                 key = f"raw/{item['body']}/{item['partition_date']}/{identifier}.{ext}"
 
+            # MinIO/boto3 has no native async client, so this upload still blocks
+            # the event loop briefly -- only the Mongo I/O below is async.
             upload_bytes(self.settings.minio_raw_bucket, key, raw_content, content_type)
 
             doc = {
@@ -95,7 +98,7 @@ class MongoMinioPipeline:
                 doc["first_scraped_at"] = now
                 doc["scrape_errors"] = []
 
-            self.collection.replace_one({"_id": identifier}, doc, upsert=True)
+            await self.collection.replace_one({"_id": identifier}, doc, upsert=True)
             self.stats["scraped"] += 1
 
         except Exception as exc:
@@ -109,7 +112,7 @@ class MongoMinioPipeline:
                     "error": str(exc),
                 },
             )
-            self.collection.update_one(
+            await self.collection.update_one(
                 {"_id": identifier},
                 {"$push": {"scrape_errors": str(exc)}},
                 upsert=True,
